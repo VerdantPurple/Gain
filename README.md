@@ -6,7 +6,7 @@ How do I use it?
 First, install it by running this command in KoLmafia's graphical CLI:
 
 <pre>
-git checkout https://github.com/loathers/Gain.git
+git checkout https://github.com/VerdantPurple/Gain.git
 </pre>
 Once it's installed, go to the Graphical CLI, and type "gain help".
 
