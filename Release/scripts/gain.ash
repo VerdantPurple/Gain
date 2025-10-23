@@ -138,8 +138,14 @@ int __maximum_meat_to_spend = 100000;
 boolean __setting_silent = false;
 boolean __setting_ignore_percentages = false;
 boolean __setting_allow_limited_buffs = false;
+
+boolean __setting_simulation_only = false;
+float[string] __simulation_modifier_bonus;
+buffer __simulation_output;
+
 int __starting_meat = -1;
 int __meat_spent = 0;
+
 if (my_class() == $class[turtle tamer])
 {
 	foreach s in $skills[Blessing of the Storm Tortoise,Blessing of She-Who-Was,Blessing of the War Snapper]
@@ -152,8 +158,24 @@ else if (my_class() == $class[pastamancer])
 }
 
 foreach sk in $skills[Aug. 6th: Fresh Breath Day!, Aug. 7th: Lighthouse Day!, Cincho: Party Soundtrack] {
-		__modify_blocked_skills[sk] = true;
+	__modify_blocked_skills[sk] = true;
 }
+
+
+boolean haveEquipment(item equipment) {
+	return item_amount(equipment) > 0 || have_equipped(equipment);
+}
+
+void initializeRequiredEquipment() {
+	if (!haveEquipment($item[April Shower Thoughts Shield])) {
+		// special effects added to normal skills we may still want to use
+		foreach e in $effects[Slippery as a Seal,Strength of the Tortoise,Tubes of Universal Meat,Lubricating Sauce,Disco over Matter,Mariachi Moisture] {
+			__blocked_effects[e] = true;
+		}
+	}
+}
+initializeRequiredEquipment();
+
 
 boolean [effect] __limited_effects;
 __limited_effects[to_effect("Blessing of your favorite Bird")] = true;
@@ -265,6 +287,18 @@ void blockLimitedBuffs()
 		if (s == $skill[none]) continue;
 		__modify_blocked_skills[s] = true;
 	}
+
+	// Everything looks beige
+	foreach s in $skills[Pull down your crepe paper phrygian cap,Look through your crepe paper pie clip,Play with your crepe paper puzzle,Embrace polka]
+	{
+		__modify_blocked_skills[s] = true;
+	}
+
+	// How to value scaling stat costs?
+	foreach s in $skills[BCZ: Blood Bath,BCZ: Dial it up to 11,BCZ: Sweat Equity]
+	{
+		__modify_blocked_skills[s] = true;
+	}
 }
 
 
@@ -295,7 +329,7 @@ Record ModifierUpkeepEntry
 	int turns_gotten_from_source;
 };
 
-string ModifierUpkeepEntryDescription(ModifierUpkeepEntry entry)
+string ModifierUpkeepEntryDescription(ModifierUpkeepEntry entry, string modifier_name)
 {
 	buffer out;
 	if (entry.s != $skill[none])
@@ -310,6 +344,12 @@ string ModifierUpkeepEntryDescription(ModifierUpkeepEntry entry)
 	out.append(entry.turns_gotten_from_source);
 	out.append(" turns of " );
 	out.append(entry.e);
+	float modifier_value = entry.e.numeric_modifier_including_percentages_on_base_modifiers(modifier_name);
+	if (modifier_value > 0)
+		out.append(", +");
+	else
+		out.append(", ");
+	out.append(modifier_value + " " + modifier_name);
 	return out;
 }
 
@@ -341,6 +381,70 @@ float ModifierUpkeepEntryEfficiency(ModifierUpkeepEntry entry, ModifierUpkeepSet
 	//if (entry.s != $skill[none])
 		//print_html(entry.s + ": " + cost + ", " + combined);
 	return cost / combined;
+}
+
+string[int] GetAllModifiers(effect e) {
+	string[int] modifier_names;
+	string[int] modifiers = e.string_modifier("modifiers").split_string(", ");
+	foreach _, full_modifier in modifiers {
+		string modifier_name = full_modifier.split_string(": ")[0];
+		modifier_names[modifier_names.count()] = modifier_name.to_lower_case();
+	}
+	return modifier_names;
+}
+
+boolean isBetween(float value, float low, float high) {
+	return (low < value && value < high);
+}
+
+void SimulateBuff(string modifier_name, float value)
+{
+	float value_to_add = value;
+
+	if (modifier_name == "combat rate") {
+		float current_value = numeric_modifier(modifier_name) + __simulation_modifier_bonus[modifier_name];
+		int value_remaining = value;
+		value_to_add = 0;
+
+		int increment = 1;
+		if (value < 0)
+			increment = -1;
+
+		// soft cap
+		while ((current_value + value_to_add).isBetween(-25, 25)) {
+			if (value_remaining == 0) {
+				break;
+			}
+			value_remaining -= increment;
+			value_to_add += increment;
+		}
+		// hard cap
+		while ((current_value + value_to_add).isBetween(-35, 35)) {
+			if (value_remaining == 0) {
+				break;
+			}
+			value_remaining -= increment;
+			value_to_add += (increment.to_float() / 5);
+		}
+	}
+
+	__simulation_modifier_bonus[modifier_name] += value_to_add;
+}
+
+void SimulateModifierUpkeep(ModifierUpkeepEntry entry, ModifierUpkeepSettings settings, int qty)
+{
+
+	if (have_effect(entry.e) == 0) {
+		foreach _, modifier_name in GetAllModifiers(entry.e) {
+			float value = entry.e.numeric_modifier_including_percentages_on_base_modifiers(modifier_name);
+			SimulateBuff(modifier_name, value);
+		}
+	}
+
+	if (entry.type == MODIFIER_UPKEEP_ENTRY_TYPE_ITEM)
+		__simulation_output.append("use " + qty + " " + entry.it.name + "; ");
+	if (entry.type == MODIFIER_UPKEEP_ENTRY_TYPE_SKILL)
+		__simulation_output.append("cast " + qty + " " + entry.s.name + "; ");
 }
 
 void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
@@ -480,7 +584,9 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			relevant_value_for_modifier = my_maxhp();
 		if (settings.modifier_name ≈ "familiar weight")
 			relevant_value_for_modifier = numeric_modifier(settings.modifier_name) + my_familiar().familiar_weight(); //FIXME support feasted familiars, because that's a complete pain
-			
+
+		if (__setting_simulation_only)
+			relevant_value_for_modifier += __simulation_modifier_bonus[settings.modifier_name];
 			
 		boolean satisfied = true;
 		if (settings.minimum_value >= 0.0 && settings.minimum_value > relevant_value_for_modifier)
@@ -495,7 +601,7 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 		{
 			first = false;
 		}
-		else
+		else if (!__setting_simulation_only)
 		{
 			if (last_loop_value == relevant_value_for_modifier && !allow_overriding_modifier_value_safety && !(settings.modifier_name ≈ "any"))
 			{
@@ -632,11 +738,11 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 				break;
 			}
 			if (!__setting_silent)
-				print_html(entry.ModifierUpkeepEntryDescription() + ": " + entry_efficiency + " efficiency");
+				print_html(entry.ModifierUpkeepEntryDescription(settings.modifier_name) + ": " + round(entry_efficiency*1000)/1000.0 + " efficiency");
 			
 			if (__gain_setting_confirm)
 			{
-				boolean ready = user_confirm(entry.ModifierUpkeepEntryDescription() + "\nREADY?");
+				boolean ready = user_confirm(entry.ModifierUpkeepEntryDescription(settings.modifier_name) + "\nREADY?");
 				if (!ready)
 					return;
 			}
@@ -644,8 +750,9 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			
 			//execute:
 			int before_effect = entry.e.have_effect();
+			int max_reasonable_uses = (my_adventures() / entry.turns_gotten_from_source);
 			int amount = MAX(1, ceil(to_float(settings.minimum_turns_wanted - entry.e.have_effect()) / MAX(1.0, to_float(entry.turns_gotten_from_source))));
-			amount = MIN(10, amount);
+			amount = MIN(max_reasonable_uses, amount);
 			
 			if (turn_into_wish)
 			{
@@ -653,29 +760,51 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			}
 			else if (entry.type == MODIFIER_UPKEEP_ENTRY_TYPE_ITEM)
 			{
-				use(amount, entry.it);
+				if (__setting_simulation_only)
+				{
+					SimulateModifierUpkeep(entry, settings, amount);
+				}
+				else
+				{
+					use(amount, entry.it);
+				}
 			}
 			else if (entry.type == MODIFIER_UPKEEP_ENTRY_TYPE_SKILL)
 			{
-				int times_can_cast = 10;
+				if (entry.s.mp_cost() > 0)
+					max_reasonable_uses = max(1, my_mp() / entry.s.mp_cost());
 				if (entry.s.hp_cost() > 0)
-					times_can_cast = max(1, (my_hp() - 1) / entry.s.hp_cost());
+					max_reasonable_uses = max(1, (my_hp() - 1) / entry.s.hp_cost());
 				
 				item [slot] saved_equipment;
-				if ($skills[CHEAT CODE: Triple Size,CHEAT CODE: Invisible Avatar] contains entry.s && !$Item[powerful glove].have_equipped())
+				if (!__setting_simulation_only && $skills[CHEAT CODE: Triple Size,CHEAT CODE: Invisible Avatar] contains entry.s && !$Item[powerful glove].have_equipped())
 				{
 					saved_equipment[$slot[acc1]] = $slot[acc1].equipped_item();
 					equip($item[powerful glove], $slot[acc1]);
 				}
-				print_html("casting " + entry.s);
-				boolean result = use_skill(min(times_can_cast, amount), entry.s);
+
+				int times_to_cast = min(max_reasonable_uses, amount);
+				if (__setting_simulation_only)
+				{
+					SimulateModifierUpkeep(entry, settings, times_to_cast);
+				}
+				else
+				{
+					use_skill(times_to_cast, entry.s);
+				}
+
 				foreach s, it in saved_equipment
 				{
 					equip(it, s);
 				}
 			}
 			int after_effect = entry.e.have_effect();
-			if (after_effect == before_effect)
+
+			if (__setting_simulation_only)
+			{
+				__blocked_effects[entry.e] = true;
+			}
+			else if (after_effect == before_effect)
 			{
 				//use 1 future drug: Muscularactum
 				//You acquire an effect: The Strength... of the Future (0)
@@ -690,7 +819,7 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 						continue;
 					}
 					else
-						abort("Mafia bug: " + entry.ModifierUpkeepEntryDescription() + " did not gain any turns.");
+						abort("Mafia bug: " + entry.ModifierUpkeepEntryDescription(settings.modifier_name) + " did not gain any turns.");
 				}
 			}
 			else if (before_effect != 0 && after_effect < 1000)
@@ -699,7 +828,7 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			{
 				dynamic_blocked_effects[entry.e] = true;
 			}
-			__meat_spent += meat_cost;
+			__meat_spent += meat_cost * amount;
 			did_execute_one = true;
 			break;
 		}
@@ -742,6 +871,7 @@ void ModifierOutputExampleUsage()
 	if (__setting_silent) return;
 	print_html("<strong>silent</strong>: don't output text (useful in libraries)");
 	print_html("<strong>limited</strong>: allow limited buffs");
+	print_html("<strong>sim</strong>: simulate what would happen, and what it might cost");
 	print_html("");
 	print_html("Example usage:");
 	print_html("<strong>gain 400 initiative</strong>: buff to 400 initiative, as efficiently as possible");
@@ -816,6 +946,11 @@ void main(string arguments)
 	{
 		if (argument == "") continue;
 		boolean ignore_text = false;
+		if (argument == "sim")
+		{
+			__setting_simulation_only = true;
+			continue;
+		}
 		if (argument == "turns" || argument == "turn")
 		{
 			desired_min_turns = MAX(1, modifier_value);
@@ -929,6 +1064,14 @@ void main(string arguments)
 		modifier_settings.maximum_efficiency_set = maximum_efficiency_known;
 		modifier_settings.maximum_efficiency = maximum_efficiency;
 		ModifierUpkeepEffects(modifier_settings);
+	}
+
+	if (__setting_simulation_only)
+	{
+		print_html("<\br>Execute:");
+		print(__simulation_output);
+		print("===========");
+		print_html("Estimated cost: " + __meat_spent + " meat  ( " + __meat_spent/desired_min_turns + "/turn )");
 	}
 	
 }
