@@ -750,7 +750,7 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			
 			//execute:
 			int before_effect = entry.e.have_effect();
-			int max_reasonable_uses = (my_adventures() / entry.turns_gotten_from_source);
+			int max_reasonable_uses = max(1, my_adventures() / entry.turns_gotten_from_source);
 			int amount = MAX(1, ceil(to_float(settings.minimum_turns_wanted - entry.e.have_effect()) / MAX(1.0, to_float(entry.turns_gotten_from_source))));
 			amount = MIN(max_reasonable_uses, amount);
 			
