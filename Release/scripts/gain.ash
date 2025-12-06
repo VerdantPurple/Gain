@@ -128,8 +128,7 @@ initialiseModifiers();
 string __gain_version = "1.1.1";
 boolean __gain_setting_confirm = false;
 
-//we don't use the pirate items because mafia doesn't acquire them properly - if pirate tract is 301 in the mall, it'll try to get it from the store, and fail
-boolean [item] __modify_blocked_items = $items[M-242,snake,sparkler,pirate tract,pirate pamphlet,pirate brochure,elven suicide capsule,ghost dog chow, bottle of bubbles, yummy tummy bean];
+boolean [item] __modify_blocked_items;
 boolean [skill] __modify_blocked_skills;
 boolean [effect] __blocked_effects;
 boolean [effect] __fixed_blocked_effects = $effects[cowrruption,Visions of the Deep Dark Deeps];
@@ -145,6 +144,19 @@ buffer __simulation_output;
 
 int __starting_meat = -1;
 int __meat_spent = 0;
+
+void initializeBlockedItems() {
+	//we don't use the pirate items because mafia doesn't acquire them properly - if pirate tract is 301 in the mall, it'll try to get it from the store, and fail
+	foreach it in $items[M-242,snake,sparkler,pirate tract,pirate pamphlet,pirate brochure,elven suicide capsule,ghost dog chow, bottle of bubbles, yummy tummy bean] {
+		__modify_blocked_items[it] = true;
+	}
+
+	boolean isAutumn = $strings[09,10,11] contains now_to_string("MM");
+	if (!isAutumn) {
+		__modify_blocked_items[$item[crystallized pumpkin spice]] = true;
+	}
+}
+initializeBlockedItems();
 
 if (my_class() == $class[turtle tamer])
 {
