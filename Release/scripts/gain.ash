@@ -768,7 +768,11 @@ void ModifierUpkeepEffects(ModifierUpkeepSettings settings)
 			
 			if (turn_into_wish)
 			{
-				abort("wish for " + entry.e);
+				if (__setting_simulation_only) {
+					print("wish for " + entry.e, "red");
+				} else {
+					abort("wish for " + entry.e);
+				}
 			}
 			else if (entry.type == MODIFIER_UPKEEP_ENTRY_TYPE_ITEM)
 			{
