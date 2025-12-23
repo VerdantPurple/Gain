@@ -924,7 +924,6 @@ void ModifierAddUserModifier(int [string] desired_modifiers, string current_modi
 	if (modifier_value == 0.0)
 	{
 		modifier_value = 1000000.0;
-		__maximum_meat_to_spend = 10000;
 	}
 	string converted_modifier = ModifierConvertUserModifierToMafia(current_modifier);
 	if (converted_modifier == "all res")
@@ -993,7 +992,7 @@ void main(string arguments)
 		}
 		if (argument == "maxmeatspent")
 		{
-			__maximum_meat_to_spend = MIN(modifier_value, __maximum_meat_to_spend);
+			__maximum_meat_to_spend = modifier_value;
 			modifier_value = 0.0;
 			ignore_text = true;
 		}
