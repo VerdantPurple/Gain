@@ -915,6 +915,7 @@ string ModifierConvertUserModifierToMafia(string modifier_name)
 	if (modifier_name == "stench res") return "stench resistance";
 	if (modifier_name == "spooky res") return "spooky resistance";
 	if (modifier_name == "mainstat") return my_primestat().to_string();
+	if (modifier_name.contains_text("dmg")) return replace_string(modifier_name, "dmg", "damage");
 	return modifier_name;
 }
 
